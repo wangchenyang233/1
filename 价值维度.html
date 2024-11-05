@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>价值重要度计算器</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            padding: 20px;
+        }
+        .content {
+            width: 90%;
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        input[type="number"], input[type="text"], select {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        table {
+            margin: 20px auto;
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        .matrix-header, .matrix-input {
+            width: 100%;
+        }
+    </style>
+    <script>
+        let criterionWeights = [];
+
+        function updateReciprocal(layer, criterionIndex, i, j) {
+            const selectId = `matrix-layer-${layer}${criterionIndex !== null ? `-${criterionIndex}` : ''}-${i}-${j}`;
+            const reciprocalSelectId = `matrix-layer-${layer}${criterionIndex !== null ? `-${criterionIndex}` : ''}-${j}-${i}`;
+            
+            const selectElement = document.getElementById(selectId);
+            const reciprocalElement = document.getElementById(reciprocalSelectId);
+            
+            const value = parseFloat(selectElement.value);
+            if (!isNaN(value) && value > 0) {
+                const reciprocal = (1 / value).toFixed(2);
+                if (reciprocalElement) {
+                    reciprocalElement.innerHTML = '';
+                    const reciprocalOption = document.createElement('option');
+                    reciprocalOption.value = reciprocal;
+                    reciprocalOption.text = reciprocal;
+                    reciprocalElement.appendChild(reciprocalOption);
+                    reciprocalElement.value = reciprocal;
+                }
+            }
+        }
+
+        function initializeModelWithAlternatives() {
+            const layersContainer = document.getElementById("layers-container");
+            layersContainer.innerHTML = "";
+
+            const goalDiv = document.createElement("div");
+            goalDiv.classList.add("layer-section");
+            goalDiv.id = "layer-1";
+            goalDiv.innerHTML = `
+                <h2>价值所属类</h2>
+                <label for="goal-layer-1">价值的类:</label>
+                <input type="text" id="goal-layer-1" placeholder="请输入价值的类" class="matrix-header" />
+            `;
+            layersContainer.appendChild(goalDiv);
+
+            const criterionDiv = document.createElement("div");
+            criterionDiv.classList.add("layer-section");
+            criterionDiv.id = `layer-2`;
+            criterionDiv.innerHTML = `
+                <h2>价值维度(一级)</h2>
+                <label for="matrixSize-layer-2">价值维度(一级)数量:</label>
+                <input type="number" id="matrixSize-layer-2" min="1" value="3" onchange="generateCriterionInputs()" />
+                <div id="matrixInputs-layer-2"></div>
+                <button onclick="calculateLayerAHP(2)">计算价值权重</button>
+                <div id="output-layer-2"></div>
+            `;
+            layersContainer.appendChild(criterionDiv);
+
+            const alternativesContainer = document.createElement("div");
+            alternativesContainer.id = "alternatives-container";
+            layersContainer.appendChild(alternativesContainer);
+        }
+
+        function generateCriterionInputs() {
+            const size = parseInt(document.getElementById('matrixSize-layer-2').value);
+
+            if (isNaN(size) || size < 1) {
+                alert('请输入价值维度(一级)的有效矩阵大小（大于0的整数）');
+                return;
+            }
+
+            let matrixInputs = `<h3>价值维度(一级)的成对比较矩阵:</h3><table>`;
+
+            matrixInputs += "<tr><th></th>";
+            for (let i = 0; i < size; i++) {
+                matrixInputs += `<th><input type='text' id='name-layer-2-${i}' placeholder='请输入价值维度名称' class='matrix-header' oninput="updateRowNames(2, ${i})"/></th>`;
+            }
+            matrixInputs += "</tr>";
+
+            for (let i = 0; i < size; i++) {
+                matrixInputs += `<tr><td><input type='text' id='name-row-layer-2-${i}' placeholder='价值维度' class='matrix-header' readonly/></td>`;
+                for (let j = 0; j < size; j++) {
+                    if (i === j) {
+                        matrixInputs += `<td><select id='matrix-layer-2-${i}-${j}' disabled class='matrix-input'><option value='1'>1</option></select></td>`;
+                    } else if (i < j) {
+                        matrixInputs += `<td><select id='matrix-layer-2-${i}-${j}' onchange='updateReciprocal(2, null, ${i}, ${j})' class='matrix-input'>`;
+                        const options = ["1", "3", "5", "0.33", "0.2"];
+                        options.forEach(option => {
+                            matrixInputs += `<option value='${option}'>${option}</option>`;
+                        });
+                        matrixInputs += `</select></td>`;
+                    } else {
+                        matrixInputs += `<td><select id='matrix-layer-2-${i}-${j}' class='matrix-input' disabled><option value='1'>1</option></select></td>`;
+                    }
+                }
+                matrixInputs += "</tr>";
+            }
+
+            matrixInputs += "</table>";
+            document.getElementById(`matrixInputs-layer-2`).innerHTML = matrixInputs;
+
+            initializeAlternatives(size);
+        }
+
+        function updateRowNames(layer, identifier) {
+            if (layer === 2) {
+                const nameInput = document.getElementById(`name-layer-2-${identifier}`);
+                const rowName = document.getElementById(`name-row-layer-2-${identifier}`);
+                rowName.value = nameInput.value;
+
+                // 更新方案层对应的准则名称
+                const criterionName = document.getElementById(`name-layer-2-${identifier}`).value;
+                const alternativesHeader = document.getElementById(`criterion-name-layer-3-${identifier}`);
+                if (alternativesHeader) {
+                    alternativesHeader.innerText = criterionName;
+                }
+            } else if (layer === 3) {
+                const criterionIndex = identifier.split("-")[0];
+                const index = identifier.split("-")[1];
+                const nameInput = document.getElementById(`name-layer-3-${criterionIndex}-${index}`);
+                const rowName = document.getElementById(`name-row-layer-3-${criterionIndex}-${index}`);
+                rowName.value = nameInput.value;
+            }
+        }
+
+        function initializeAlternatives(numberOfCriteria) {
+            const layersContainer = document.getElementById("alternatives-container");
+            layersContainer.innerHTML = "";
+
+            for (let criterionIndex = 0; criterionIndex < numberOfCriteria; criterionIndex++) {
+                const criterionName = document.getElementById(`name-layer-2-${criterionIndex}`).value.trim();
+
+                const alternativesDiv = document.createElement("div");
+                alternativesDiv.classList.add("layer-section");
+                alternativesDiv.id = `layer-3-${criterionIndex}`;
+                alternativesDiv.innerHTML = `
+                    <h2>价值维度(二级) - 所属 <span id="criterion-name-layer-3-${criterionIndex}">${criterionName}</span></h2>
+                    <label for="matrixSize-layer-3-${criterionIndex}">价值维度(二级):</label>
+                    <input type="number" id="matrixSize-layer-3-${criterionIndex}" min="1" value="3" onchange="generateAlternativesInputs(${criterionIndex})" />
+                    <div id="matrixInputs-layer-3-${criterionIndex}"></div>
+                    <button onclick="calculateLayerAHP(3, ${criterionIndex})">计算价值维度权重</button>
+                    <div id="output-layer-3-${criterionIndex}"></div>
+                `;
+                layersContainer.appendChild(alternativesDiv);
+            }
+        }
+
+        function generateAlternativesInputs(criterionIndex) {
+            const size = parseInt(document.getElementById(`matrixSize-layer-3-${criterionIndex}`).value);
+
+            if (isNaN(size) || size < 1) {
+                alert(`请输入价值维度(二级) ${criterionIndex + 1} 的方案层有效矩阵大小（大于0的整数）`);
+                return;
+            }
+
+            let matrixInputs = `<h3>价值维度(一级) ${criterionIndex + 1} 的价值维度(二级)成对比较矩阵:</h3><table>`;
+
+            matrixInputs += "<tr><th></th>";
+            for (let i = 0; i < size; i++) {
+                matrixInputs += `<th><input type='text' id='name-layer-3-${criterionIndex}-${i}' placeholder='请输入价值名称' class='matrix-header' oninput="updateRowNames(3, '${criterionIndex}-${i}')"/></th>`;
+            }
+            matrixInputs += "</tr>";
+
+            for (let i = 0; i < size; i++) {
+                matrixInputs += `<tr><td><input type='text' id='name-row-layer-3-${criterionIndex}-${i}' placeholder='价值名称' class='matrix-header' readonly/></td>`;
+                for (let j = 0; j < size; j++) {
+                    if (i === j) {
+                        matrixInputs += `<td><select id='matrix-layer-3-${criterionIndex}-${i}-${j}' disabled class='matrix-input'><option value='1'>1</option></select></td>`;
+                    } else if (i < j) {
+                        matrixInputs += `<td><select id='matrix-layer-3-${criterionIndex}-${i}-${j}' onchange='updateReciprocal(3, ${criterionIndex}, ${i}, ${j})' class='matrix-input'>`;
+                        const options = ["1", "3", "5", "0.33", "0.2"];
+                        options.forEach(option => {
+                            matrixInputs += `<option value='${option}'>${option}</option>`;
+                        });
+                        matrixInputs += `</select></td>`;
+                    } else {
+                        matrixInputs += `<td><select id='matrix-layer-3-${criterionIndex}-${i}-${j}' class='matrix-input' disabled><option value='1'>1</option></select></td>`;
+                    }
+                }
+                matrixInputs += "</tr>";
+            }
+
+            matrixInputs += "</table>";
+            document.getElementById(`matrixInputs-layer-3-${criterionIndex}`).innerHTML = matrixInputs;
+        }
+
+        function calculateLayerAHP(layer, criterionIndex = null) {
+            let matrix, size;
+
+            if (layer === 2) {
+                size = parseInt(document.getElementById('matrixSize-layer-2').value);
+            } else if (layer === 3 && criterionIndex !== null) {
+                size = parseInt(document.getElementById(`matrixSize-layer-3-${criterionIndex}`).value);
+            }
+
+            if (isNaN(size) || size < 1) {
+                alert(`请输入第${layer}层的有效矩阵大小（大于0的整数）`);
+                return;
+            }
+
+            matrix = [];
+            for (let i = 0; i < size; i++) {
+                matrix[i] = [];
+                for (let j = 0; j < size; j++) {
+                    let value;
+                    if (layer === 2) {
+                        value = parseFloat(document.getElementById(`matrix-layer-2-${i}-${j}`).value);
+                    } else if (layer === 3 && criterionIndex !== null) {
+                        value = parseFloat(document.getElementById(`matrix-layer-3-${criterionIndex}-${i}-${j}`).value);
+                    }
+
+                    if (isNaN(value) || value <= 0) {
+                        alert(`请确保第${layer}层的所有比较值均为正数`);
+                        return;
+                    }
+                    matrix[i][j] = value;
+                }
+            }
+
+            let columnSums = new Array(size).fill(0);
+            for (let i = 0; i < size; i++) {
+                for (let j = 0; j < size; j++) {
+                    columnSums[j] += matrix[i][j];
+                }
+            }
+
+            let normalizedMatrix = [];
+            let weights = new Array(size).fill(0);
+            for (let i = 0; i < size; i++) {
+                normalizedMatrix[i] = [];
+                for (let j = 0; j < size; j++) {
+                    normalizedMatrix[i][j] = matrix[i][j] / columnSums[j];
+                    weights[i] += normalizedMatrix[i][j];
+                }
+                weights[i] /= size;
+            }
+
+            if (layer === 2) {
+                criterionWeights = weights;
+            }
+
+            let output = `<h3>${layer === 2 ? "价值维度" : `价值维度 - 价值 ${criterionIndex + 1}`}的重要度结果:</h3><ul>`;
+            for (let i = 0; i < weights.length; i++) {
+                let finalWeight = weights[i];
+                if (layer === 3 && criterionIndex !== null) {
+                    finalWeight *= criterionWeights[criterionIndex];
+                }
+                output += `<li>${document.getElementById(`name-layer-${layer}-${criterionIndex !== null ? `${criterionIndex}-` : ''}${i}`).value}: ${finalWeight.toFixed(3)}</li>`;
+            }
+            output += "</ul>";
+
+            if (layer === 2) {
+                document.getElementById(`output-layer-2`).innerHTML = output;
+            } else if (layer === 3 && criterionIndex !== null) {
+                document.getElementById(`output-layer-3-${criterionIndex}`).innerHTML = output;
+            }
+
+            return weights;
+        }
+
+    </script>
+</head>
+<body>
+    <div class="content">
+        <h1>价值重要度计算器</h1>
+        <button onclick="initializeModelWithAlternatives()">初始化</button>
+        <div id="layers-container"></div>
+    </div>
+</body>
+</html>
